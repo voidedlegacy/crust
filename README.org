@@ -1,0 +1,46 @@
+* Crust
+Crust is a tiny toy compiler written in Rust. It parses a small Python-like
+syntax, type-checks it, and emits a simple bytecode format that runs on a
+built-in VM.
+
+** Language
+- Statements:
+  - =let name = expr=
+  - =print expr=
+- Expressions:
+  - integers, strings, identifiers
+  - binary operators: =+ - * /= with precedence
+  - parentheses for grouping
+
+** Quick Start
+#+begin_src sh
+cargo build
+./target/debug/crustc examples/hello.crust --run
+#+end_src
+
+** Emit Options
+#+begin_src sh
+# Emit bytecode (default)
+./target/debug/crustc examples/hello.crust -o hello.crb
+
+# Emit tokens or AST to stdout
+./target/debug/crustc examples/hello.crust --emit=tokens
+./target/debug/crustc examples/hello.crust --emit=ast
+
+# Emit tokens or AST to a file
+./target/debug/crustc examples/hello.crust --emit=tokens -o hello.tokens
+./target/debug/crustc examples/hello.crust --emit=ast -o hello.ast
+#+end_src
+
+** Bytecode
+Bytecode files use the =.crb= extension and can be executed directly:
+
+#+begin_src sh
+./target/debug/crustc hello.crb --run
+#+end_src
+
+** Example
+#+begin_src text
+let x = 40 + 2
+print x
+#+end_src

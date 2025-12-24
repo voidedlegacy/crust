@@ -1,0 +1,6 @@
+target/
+*.crb
+*.c
+*.o
+*.ast
+*.tokens
