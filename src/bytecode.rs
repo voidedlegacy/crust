@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::ast::{Op, Type, TypedExpr, TypedExprKind, TypedProgram, TypedStmt};
 use crate::util::die_simple;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instr {
     PushInt(i64),
     PushStr(String),
@@ -15,20 +15,29 @@ pub enum Instr {
     Sub,
     Mul,
     Div,
+    ConcatStr,
     PrintInt,
     PrintStr,
+    PrintSpace,
+    PrintNewline,
 }
 
 pub fn compile_to_bytecode(program: &TypedProgram) -> Vec<Instr> {
     let mut out = Vec::new();
     for stmt in &program.stmts {
         match stmt {
-            TypedStmt::Print(expr) => {
-                emit_expr(expr, &mut out);
-                match expr.ty {
-                    Type::Int => out.push(Instr::PrintInt),
-                    Type::Str => out.push(Instr::PrintStr),
+            TypedStmt::Print(exprs) => {
+                for (idx, expr) in exprs.iter().enumerate() {
+                    emit_expr(expr, &mut out);
+                    match expr.ty {
+                        Type::Int => out.push(Instr::PrintInt),
+                        Type::Str => out.push(Instr::PrintStr),
+                    }
+                    if idx + 1 < exprs.len() {
+                        out.push(Instr::PrintSpace);
+                    }
                 }
+                out.push(Instr::PrintNewline);
             }
             TypedStmt::Let { name, expr } => {
                 emit_expr(expr, &mut out);
@@ -47,12 +56,17 @@ fn emit_expr(expr: &TypedExpr, out: &mut Vec<Instr>) {
         TypedExprKind::Binary { left, op, right } => {
             emit_expr(left, out);
             emit_expr(right, out);
-            out.push(match op {
-                Op::Add => Instr::Add,
-                Op::Sub => Instr::Sub,
-                Op::Mul => Instr::Mul,
-                Op::Div => Instr::Div,
-            });
+            match expr.ty {
+                Type::Str => out.push(Instr::ConcatStr),
+                Type::Int => {
+                    out.push(match op {
+                        Op::Add => Instr::Add,
+                        Op::Sub => Instr::Sub,
+                        Op::Mul => Instr::Mul,
+                        Op::Div => Instr::Div,
+                    });
+                }
+            }
         }
     }
 }
@@ -67,7 +81,7 @@ pub fn write_bytecode(path: &Path, code: &[Instr]) {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
-    file.write_all(&[1]).unwrap_or_else(|e| {
+    file.write_all(&[2]).unwrap_or_else(|e| {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
@@ -90,13 +104,24 @@ pub fn read_bytecode(path: &Path) -> Vec<Instr> {
         die_simple("Invalid bytecode file");
     }
     let version = read_u8(&mut file);
-    if version != 1 {
+    if version != 1 && version != 2 {
         die_simple("Unsupported bytecode version");
     }
     let count = read_u32(&mut file);
     let mut code = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        code.push(read_instr(&mut file));
+        if version == 1 {
+            let instr = read_instr_v1(&mut file);
+            match instr {
+                Instr::PrintInt | Instr::PrintStr => {
+                    code.push(instr);
+                    code.push(Instr::PrintNewline);
+                }
+                _ => code.push(instr),
+            }
+        } else {
+            code.push(read_instr_v2(&mut file));
+        }
     }
     code
 }
@@ -123,12 +148,15 @@ fn write_instr(file: &mut File, instr: &Instr) {
         Instr::Sub => write_u8(file, 6),
         Instr::Mul => write_u8(file, 7),
         Instr::Div => write_u8(file, 8),
-        Instr::PrintInt => write_u8(file, 9),
-        Instr::PrintStr => write_u8(file, 10),
+        Instr::ConcatStr => write_u8(file, 9),
+        Instr::PrintInt => write_u8(file, 10),
+        Instr::PrintStr => write_u8(file, 11),
+        Instr::PrintSpace => write_u8(file, 12),
+        Instr::PrintNewline => write_u8(file, 13),
     }
 }
 
-fn read_instr(file: &mut File) -> Instr {
+fn read_instr_v1(file: &mut File) -> Instr {
     match read_u8(file) {
         1 => Instr::PushInt(read_i64(file)),
         2 => Instr::PushStr(read_string(file)),
@@ -140,6 +168,25 @@ fn read_instr(file: &mut File) -> Instr {
         8 => Instr::Div,
         9 => Instr::PrintInt,
         10 => Instr::PrintStr,
+        _ => die_simple("Invalid bytecode instruction"),
+    }
+}
+
+fn read_instr_v2(file: &mut File) -> Instr {
+    match read_u8(file) {
+        1 => Instr::PushInt(read_i64(file)),
+        2 => Instr::PushStr(read_string(file)),
+        3 => Instr::LoadVar(read_string(file)),
+        4 => Instr::StoreVar(read_string(file)),
+        5 => Instr::Add,
+        6 => Instr::Sub,
+        7 => Instr::Mul,
+        8 => Instr::Div,
+        9 => Instr::ConcatStr,
+        10 => Instr::PrintInt,
+        11 => Instr::PrintStr,
+        12 => Instr::PrintSpace,
+        13 => Instr::PrintNewline,
         _ => die_simple("Invalid bytecode instruction"),
     }
 }

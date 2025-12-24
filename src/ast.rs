@@ -5,7 +5,7 @@ pub struct Program {
 
 #[derive(Debug)]
 pub enum Stmt {
-    Print(Expr),
+    Print(Vec<Expr>),
     Let { name: String, expr: Expr },
 }
 
@@ -42,7 +42,7 @@ pub struct TypedProgram {
 
 #[derive(Debug)]
 pub enum TypedStmt {
-    Print(TypedExpr),
+    Print(Vec<TypedExpr>),
     Let { name: String, expr: TypedExpr },
 }
 

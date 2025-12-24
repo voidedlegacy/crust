@@ -1,0 +1,4 @@
+let first = "Hello"
+let second = "world"
+let message = first + ", " + second + "!"
+print message, 123

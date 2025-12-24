@@ -42,9 +42,9 @@ impl Parser {
         match self.peek() {
             Some(Token::Ident(kw)) if kw == "print" => {
                 self.next();
-                let expr = self.parse_expr();
+                let exprs = self.parse_expr_list();
                 self.expect_end();
-                Stmt::Print(expr)
+                Stmt::Print(exprs)
             }
             Some(Token::Ident(kw)) if kw == "let" => {
                 self.next();
@@ -63,6 +63,16 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Expr {
         self.parse_add_sub()
+    }
+
+    fn parse_expr_list(&mut self) -> Vec<Expr> {
+        let mut exprs = Vec::new();
+        exprs.push(self.parse_expr());
+        while matches!(self.peek(), Some(Token::Comma)) {
+            self.next();
+            exprs.push(self.parse_expr());
+        }
+        exprs
     }
 
     fn parse_add_sub(&mut self) -> Expr {

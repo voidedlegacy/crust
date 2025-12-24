@@ -83,7 +83,7 @@ fn main() {
     let bytecode = compile_to_bytecode(&typed);
 
     if emit == Emit::Bytecode {
-        let out_path = output_path.unwrap_or_else(|| {
+        let out_path = output_path.clone().unwrap_or_else(|| {
             let mut p = input_path.clone();
             p.set_extension("crb");
             p
@@ -143,6 +143,56 @@ fn emit_tokens(source: &str) -> String {
 
 fn emit_ast(program: &crate::ast::Program) -> String {
     format!("{:#?}\n", program)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ast::{Expr, Stmt, Type, TypedExprKind, TypedStmt};
+    use crate::bytecode::{compile_to_bytecode, Instr};
+    use crate::parser::parse_program;
+    use crate::typer::type_check;
+
+    #[test]
+    fn parse_print_list() {
+        let program = parse_program("print 1, 2\n");
+        match program.stmts.as_slice() {
+            [Stmt::Print(exprs)] => match exprs.as_slice() {
+                [Expr::Int(1), Expr::Int(2)] => {}
+                _ => panic!("Unexpected print expressions: {:?}", exprs),
+            },
+            _ => panic!("Expected a single print statement"),
+        }
+    }
+
+    #[test]
+    fn type_check_string_concat() {
+        let program = parse_program("let x = \"a\" + \"b\"\nprint x\n");
+        let typed = type_check(program);
+        match typed.stmts.as_slice() {
+            [TypedStmt::Let { expr, .. }, TypedStmt::Print(exprs)] => {
+                assert!(matches!(expr.ty, Type::Str));
+                assert!(matches!(expr.kind, TypedExprKind::Binary { .. }));
+                assert_eq!(exprs.len(), 1);
+            }
+            _ => panic!("Unexpected typed program shape"),
+        }
+    }
+
+    #[test]
+    fn bytecode_print_spacing() {
+        let program = parse_program("print \"a\", \"b\"\n");
+        let typed = type_check(program);
+        let code = compile_to_bytecode(&typed);
+        let expected = vec![
+            Instr::PushStr("a".to_string()),
+            Instr::PrintStr,
+            Instr::PrintSpace,
+            Instr::PushStr("b".to_string()),
+            Instr::PrintStr,
+            Instr::PrintNewline,
+        ];
+        assert_eq!(code, expected);
+    }
 }
 
 fn write_file(path: &Path, data: &str) {

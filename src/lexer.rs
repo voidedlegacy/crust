@@ -9,6 +9,7 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    Comma,
     Eq,
     LParen,
     RParen,
@@ -39,6 +40,10 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
             }
             '/' => {
                 tokens.push(Token::Slash);
+                i += 1;
+            }
+            ',' => {
+                tokens.push(Token::Comma);
                 i += 1;
             }
             '=' => {

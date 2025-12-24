@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::{self, Write};
 
 use crate::bytecode::Instr;
 use crate::util::die_simple;
@@ -34,12 +35,24 @@ pub fn run_bytecode(code: &[Instr]) {
             Instr::Sub => bin_int_op(&mut stack, |a, b| a - b),
             Instr::Mul => bin_int_op(&mut stack, |a, b| a * b),
             Instr::Div => bin_int_op(&mut stack, |a, b| a / b),
+            Instr::ConcatStr => {
+                let right = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on ConcatStr");
+                });
+                let left = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on ConcatStr");
+                });
+                match (left, right) {
+                    (Value::Str(a), Value::Str(b)) => stack.push(Value::Str(a + &b)),
+                    _ => die_simple("Type error in string concatenation"),
+                }
+            }
             Instr::PrintInt => {
                 let value = stack.pop().unwrap_or_else(|| {
                     die_simple("Stack underflow on PrintInt");
                 });
                 match value {
-                    Value::Int(v) => println!("{}", v),
+                    Value::Int(v) => print!("{}", v),
                     _ => die_simple("Type error on PrintInt"),
                 }
             }
@@ -48,9 +61,14 @@ pub fn run_bytecode(code: &[Instr]) {
                     die_simple("Stack underflow on PrintStr");
                 });
                 match value {
-                    Value::Str(s) => println!("{}", s),
+                    Value::Str(s) => print!("{}", s),
                     _ => die_simple("Type error on PrintStr"),
                 }
+            }
+            Instr::PrintSpace => print!(" "),
+            Instr::PrintNewline => {
+                println!();
+                io::stdout().flush().ok();
             }
         }
     }

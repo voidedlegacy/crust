@@ -6,11 +6,12 @@ built-in VM.
 ** Language
 - Statements:
   - =let name = expr=
-  - =print expr=
+  - =print expr, expr, ...=
 - Expressions:
   - integers, strings, identifiers
   - binary operators: =+ - * /= with precedence
   - parentheses for grouping
+  - string concatenation with =+=
 
 ** Quick Start
 #+begin_src sh
@@ -42,5 +43,6 @@ Bytecode files use the =.crb= extension and can be executed directly:
 ** Example
 #+begin_src text
 let x = 40 + 2
-print x
+let name = "Crust"
+print "hello", name, "answer:", x
 #+end_src

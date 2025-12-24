@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Expr, Stmt, Type, TypedExpr, TypedExprKind, TypedProgram, TypedStmt};
+use crate::ast::{Expr, Op, Stmt, Type, TypedExpr, TypedExprKind, TypedProgram, TypedStmt};
 use crate::util::die_simple;
 
 pub fn type_check(program: crate::ast::Program) -> TypedProgram {
@@ -9,9 +9,12 @@ pub fn type_check(program: crate::ast::Program) -> TypedProgram {
 
     for stmt in program.stmts {
         match stmt {
-            Stmt::Print(expr) => {
-                let typed = type_expr(&expr, &env);
-                stmts.push(TypedStmt::Print(typed));
+            Stmt::Print(exprs) => {
+                let mut typed_exprs = Vec::new();
+                for expr in exprs {
+                    typed_exprs.push(type_expr(&expr, &env));
+                }
+                stmts.push(TypedStmt::Print(typed_exprs));
             }
             Stmt::Let { name, expr } => {
                 if env.contains_key(&name) {
@@ -56,7 +59,15 @@ fn type_expr(expr: &Expr, env: &HashMap<String, Type>) -> TypedExpr {
                     },
                     ty: Type::Int,
                 },
-                _ => die_simple("Only integer arithmetic is supported in expressions"),
+                (Type::Str, Type::Str, Op::Add) => TypedExpr {
+                    kind: TypedExprKind::Binary {
+                        left: Box::new(left_t),
+                        op: *op,
+                        right: Box::new(right_t),
+                    },
+                    ty: Type::Str,
+                },
+                _ => die_simple("Type error in expression"),
             }
         }
     }
