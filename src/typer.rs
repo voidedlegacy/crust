@@ -35,6 +35,9 @@ pub fn type_check(program: crate::ast::Program) -> TypedProgram {
                 }
                 stmts.push(TypedStmt::Set { name, expr: typed });
             }
+            Stmt::Use { .. } => {
+                die_simple("use statements must be resolved before type checking");
+            }
             Stmt::If {
                 cond,
                 then_body,
@@ -105,6 +108,9 @@ fn type_block(stmts: &[Stmt], mut env: HashMap<String, Type>) -> Vec<TypedStmt> 
                     expr: typed,
                 });
             }
+            Stmt::Use { .. } => {
+                die_simple("use statements must be resolved before type checking");
+            }
             Stmt::If {
                 cond,
                 then_body,
@@ -162,12 +168,12 @@ fn type_expr(expr: &Expr, env: &HashMap<String, Type>) -> TypedExpr {
         Expr::Call { name, args } => {
             let typed_args: Vec<TypedExpr> = args.iter().map(|a| type_expr(a, env)).collect();
             match name.as_str() {
-                "input" => {
+                "input" | "std::io::read_line" => {
                     if typed_args.len() > 1 {
-                        die_simple("input() takes zero or one argument");
+                        die_simple("read_line() takes zero or one argument");
                     }
                     if typed_args.len() == 1 && typed_args[0].ty != Type::Str {
-                        die_simple("input() prompt must be a string");
+                        die_simple("read_line() prompt must be a string");
                     }
                     TypedExpr {
                         kind: TypedExprKind::Call {
@@ -184,6 +190,66 @@ fn type_expr(expr: &Expr, env: &HashMap<String, Type>) -> TypedExpr {
                     match typed_args[0].ty {
                         Type::Int | Type::Str => {}
                         _ => die_simple("int() expects a string or int argument"),
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Int,
+                    }
+                }
+                "std::io::read_int" => {
+                    if typed_args.len() > 1 {
+                        die_simple("read_int() takes zero or one argument");
+                    }
+                    if typed_args.len() == 1 && typed_args[0].ty != Type::Str {
+                        die_simple("read_int() prompt must be a string");
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Int,
+                    }
+                }
+                "std::string::len" => {
+                    if typed_args.len() != 1 {
+                        die_simple("len() expects exactly one argument");
+                    }
+                    if typed_args[0].ty != Type::Str {
+                        die_simple("len() expects a string");
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Int,
+                    }
+                }
+                "std::math::abs" => {
+                    if typed_args.len() != 1 {
+                        die_simple("abs() expects exactly one argument");
+                    }
+                    if typed_args[0].ty != Type::Int {
+                        die_simple("abs() expects an int");
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Int,
+                    }
+                }
+                "std::math::min" | "std::math::max" => {
+                    if typed_args.len() != 2 {
+                        die_simple("min/max expects exactly two arguments");
+                    }
+                    if typed_args[0].ty != Type::Int || typed_args[1].ty != Type::Int {
+                        die_simple("min/max expects int arguments");
                     }
                     TypedExpr {
                         kind: TypedExprKind::Call {

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crustc::bytecode::{compile_to_bytecode, read_bytecode, write_bytecode};
 use crustc::lexer::lex_line;
-use crustc::parser::parse_program;
+use crustc::loader::load_program;
 use crustc::typer::type_check;
 use crustc::vm::run_bytecode;
 
@@ -67,7 +67,7 @@ fn main() {
         emit_text = Some(emit_tokens(&source));
     }
 
-    let program = parse_program(&source);
+    let program = load_program(&input_path);
     if emit == Emit::Ast {
         emit_text = Some(emit_ast(&program));
     }
@@ -108,6 +108,7 @@ fn read_file(path: &Path) -> String {
         std::process::exit(1);
     })
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Emit {

@@ -1,0 +1,5 @@
+# std::math
+# Functions:
+# - std::math::abs(x)
+# - std::math::min(a, b)
+# - std::math::max(a, b)

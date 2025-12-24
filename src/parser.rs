@@ -133,6 +133,36 @@ impl BlockParser {
                 expr_parser.expect_end();
                 Stmt::Set { name, expr }
             }
+            "use" => {
+                self.pos += 1;
+                let mut parser = LineParser::new(rest.to_vec(), line_no);
+                let path = match parser.next() {
+                    Some(Token::Str(s)) => s,
+                    _ => die(line_no, "Expected string literal after 'use'"),
+                };
+                let mut alias = None;
+                match parser.next() {
+                    Some(Token::Ident(s)) if s == "as" => {
+                        alias = Some(match parser.next() {
+                            Some(Token::Ident(name)) => name,
+                            _ => die(line_no, "Expected identifier after 'as'"),
+                        });
+                        ensure_only_semicolons(parser.remaining_tokens(), line_no);
+                    }
+                    Some(Token::Semicolon) => {
+                        let mut rest = vec![Token::Semicolon];
+                        rest.extend(parser.remaining_tokens());
+                        ensure_only_semicolons(rest, line_no);
+                    }
+                    Some(other) => {
+                        let mut rest = vec![other];
+                        rest.extend(parser.remaining_tokens());
+                        ensure_only_semicolons(rest, line_no);
+                    }
+                    None => {}
+                }
+                Stmt::Use { path, alias }
+            }
             "if" => {
                 let (cond, style) = parse_condition_line(line_no, &rest);
                 self.pos += 1;
@@ -193,7 +223,7 @@ impl BlockParser {
             }
             _ => die(
                 line_no,
-                "Unknown statement. Use 'let', 'set', 'print', 'if', or 'while'.",
+                "Unknown statement. Use 'let', 'set', 'use', 'print', 'if', or 'while'.",
             ),
         }
     }
@@ -291,6 +321,14 @@ fn is_line_only_rbrace(tokens: &[Token]) -> bool {
 fn strip_trailing_semicolons(tokens: &mut Vec<Token>) {
     while matches!(tokens.last(), Some(Token::Semicolon)) {
         tokens.pop();
+    }
+}
+
+fn ensure_only_semicolons(tokens: Vec<Token>, line_no: usize) {
+    let mut rest = tokens;
+    strip_trailing_semicolons(&mut rest);
+    if !rest.is_empty() {
+        die(line_no, "Unexpected tokens after statement");
     }
 }
 

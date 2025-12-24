@@ -46,6 +46,48 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
                     _ => die_simple("Type error in int()"),
                 }
             }
+            Instr::StrLen => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on StrLen");
+                });
+                match value {
+                    Value::Str(s) => stack.push(Value::Int(s.chars().count() as i64)),
+                    _ => die_simple("Type error in len()"),
+                }
+            }
+            Instr::Abs => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Abs");
+                });
+                match value {
+                    Value::Int(v) => stack.push(Value::Int(v.abs())),
+                    _ => die_simple("Type error in abs()"),
+                }
+            }
+            Instr::Min => {
+                let right = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Min");
+                });
+                let left = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Min");
+                });
+                match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => stack.push(Value::Int(a.min(b))),
+                    _ => die_simple("Type error in min()"),
+                }
+            }
+            Instr::Max => {
+                let right = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Max");
+                });
+                let left = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Max");
+                });
+                match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => stack.push(Value::Int(a.max(b))),
+                    _ => die_simple("Type error in max()"),
+                }
+            }
             Instr::LoadVar(name) => {
                 let value = vars
                     .get(name)

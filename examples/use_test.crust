@@ -1,0 +1,2 @@
+use "mod_a.crust"
+print mod_a::x

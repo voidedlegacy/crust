@@ -1,0 +1,4 @@
+# Crust prelude (loaded automatically)
+use "io.crust" as std::io
+use "math.crust" as std::math
+use "string.crust" as std::string

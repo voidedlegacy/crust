@@ -1,0 +1,3 @@
+let a = std::io::read_int("Enter a: ")
+let b = std::io::read_int("Enter b: ")
+print std::math::max(a, b)

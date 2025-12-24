@@ -1,8 +1,10 @@
 use crustc::ast::{Expr, Stmt, Type, TypedExprKind, TypedStmt};
 use crustc::bytecode::{compile_to_bytecode, Instr};
+use crustc::loader::load_program;
 use crustc::parser::parse_program;
 use crustc::typer::type_check;
 use crustc::vm::run_bytecode_with_writer;
+use std::path::Path;
 
 #[test]
 fn parse_print_list() {
@@ -71,6 +73,32 @@ fn bytecode_input_prompt() {
         Instr::StoreVar("x".to_string()),
     ];
     assert_eq!(code, expected);
+}
+
+#[test]
+fn bytecode_std_read_int_prompt() {
+    let program = parse_program("let x = std::io::read_int(\"A: \")\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let expected = vec![
+        Instr::PushStr("A: ".to_string()),
+        Instr::PrintStr,
+        Instr::ReadLine,
+        Instr::ToInt,
+        Instr::StoreVar("x".to_string()),
+    ];
+    assert_eq!(code, expected);
+}
+
+#[test]
+fn bytecode_std_len_abs_min_max() {
+    let program = parse_program("print std::string::len(\"hi\"), std::math::abs(0 - 3), std::math::min(2, 9), std::math::max(2, 9)\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    assert!(code.contains(&Instr::StrLen));
+    assert!(code.contains(&Instr::Abs));
+    assert!(code.contains(&Instr::Min));
+    assert!(code.contains(&Instr::Max));
 }
 
 #[test]
@@ -183,4 +211,15 @@ fn vm_set_assignment() {
     run_bytecode_with_writer(&code, &mut out);
     let output = String::from_utf8(out).expect("utf8");
     assert_eq!(output, "3\n");
+}
+
+#[test]
+fn vm_use_module() {
+    let program = load_program(Path::new("examples/use_test.crust"));
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "7\n");
 }

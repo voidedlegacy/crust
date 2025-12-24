@@ -7,6 +7,7 @@ built-in VM.
 - Statements:
   - =let name = expr=
   - =set name = expr=
+  - =use "path"= or =use "path" as name=
   - =print expr, expr, ...=
   - if expr: ... else: ... end
   - while expr: ... end
@@ -14,9 +15,14 @@ built-in VM.
   - =let= declares a new variable; =set= reassigns an existing one
   - C-style blocks are also supported: =if (expr) { ... }= and =while (expr) { ... }=
   - Trailing semicolons are optional for statements
+  - =use= loads a module once per compilation and prefixes names with its module name
+  - Use =modname::var= to access module variables
+  - =std/prelude.crust= is loaded automatically when present
 - Expressions:
   - integers, strings, booleans, identifiers
   - function calls: =input()=, =input("prompt")=, =int(x)=
+  - std functions: =std::io::read_line=, =std::io::read_int=, =std::string::len=, =std::math::abs=, =std::math::min=, =std::math::max=
+  - std functions are available when the prelude is loaded (default)
   - boolean literals: =true= and =false=
   - arithmetic operators: + - * /
   - comparison operators: == != < <= > >=
@@ -42,6 +48,21 @@ cargo build
 ./target/debug/crustc examples/hello.crust --emit=tokens -o hello.tokens
 ./target/debug/crustc examples/hello.crust --emit=ast -o hello.ast
 #+end_src
+
+** Standard Library
+Crust ships with a tiny standard library in =std/=. The compiler auto-loads
+=std/prelude.crust= when present, which makes the =std::io=, =std::math=, and
+=std::string= modules available.
+
+Builtin std functions:
+- =std::io::read_line()=
+- =std::io::read_line("prompt")=
+- =std::io::read_int()=
+- =std::io::read_int("prompt")=
+- =std::string::len(s)=
+- =std::math::abs(x)=
+- =std::math::min(a, b)=
+- =std::math::max(a, b)=
 
 ** Bytecode
 Bytecode files use the =.crb= extension and can be executed directly:
@@ -70,6 +91,22 @@ print a + b
 #+end_src
 
 #+begin_src text
+let a = std::io::read_int("Enter a: ")
+let b = std::io::read_int("Enter b: ")
+print std::math::max(a, b)
+#+end_src
+
+#+begin_src text
+use "examples/mod_a.crust"
+print mod_a::x
+#+end_src
+
+#+begin_src text
+use "examples/mod_a.crust" as m
+print m::x
+#+end_src
+
+#+begin_src text
 let i = 0
 while i < 3:
 print i
@@ -83,4 +120,8 @@ while (i < 3) {
 print i;
 set i = i + 1;
 }
+#+end_src
+
+#+begin_src text
+print std::io::read_line("Name: ")
 #+end_src

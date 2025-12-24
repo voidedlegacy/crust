@@ -12,6 +12,10 @@ pub enum Instr {
     PushBool(bool),
     ReadLine,
     ToInt,
+    StrLen,
+    Abs,
+    Min,
+    Max,
     LoadVar(String),
     StoreVar(String),
     Add,
@@ -114,9 +118,9 @@ fn emit_expr(expr: &TypedExpr, out: &mut Vec<Instr>) {
         TypedExprKind::Bool(v) => out.push(Instr::PushBool(*v)),
         TypedExprKind::Var(name) => out.push(Instr::LoadVar(name.clone())),
         TypedExprKind::Call { name, args } => match name.as_str() {
-            "input" => {
+            "input" | "std::io::read_line" => {
                 if args.len() > 1 {
-                    die_simple("input() takes zero or one argument");
+                    die_simple("read_line() takes zero or one argument");
                 }
                 if args.len() == 1 {
                     emit_expr(&args[0], out);
@@ -130,6 +134,47 @@ fn emit_expr(expr: &TypedExpr, out: &mut Vec<Instr>) {
                 }
                 emit_expr(&args[0], out);
                 out.push(Instr::ToInt);
+            }
+            "std::io::read_int" => {
+                if args.len() > 1 {
+                    die_simple("read_int() takes zero or one argument");
+                }
+                if args.len() == 1 {
+                    emit_expr(&args[0], out);
+                    out.push(Instr::PrintStr);
+                }
+                out.push(Instr::ReadLine);
+                out.push(Instr::ToInt);
+            }
+            "std::string::len" => {
+                if args.len() != 1 {
+                    die_simple("len() expects exactly one argument");
+                }
+                emit_expr(&args[0], out);
+                out.push(Instr::StrLen);
+            }
+            "std::math::abs" => {
+                if args.len() != 1 {
+                    die_simple("abs() expects exactly one argument");
+                }
+                emit_expr(&args[0], out);
+                out.push(Instr::Abs);
+            }
+            "std::math::min" => {
+                if args.len() != 2 {
+                    die_simple("min() expects exactly two arguments");
+                }
+                emit_expr(&args[0], out);
+                emit_expr(&args[1], out);
+                out.push(Instr::Min);
+            }
+            "std::math::max" => {
+                if args.len() != 2 {
+                    die_simple("max() expects exactly two arguments");
+                }
+                emit_expr(&args[0], out);
+                emit_expr(&args[1], out);
+                out.push(Instr::Max);
             }
             _ => die_simple(&format!("Unknown function '{}'", name)),
         },
@@ -176,7 +221,7 @@ pub fn write_bytecode(path: &Path, code: &[Instr]) {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
-    file.write_all(&[4]).unwrap_or_else(|e| {
+    file.write_all(&[5]).unwrap_or_else(|e| {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
@@ -199,7 +244,7 @@ pub fn read_bytecode(path: &Path) -> Vec<Instr> {
         die_simple("Invalid bytecode file");
     }
     let version = read_u8(&mut file);
-    if version != 1 && version != 2 && version != 3 && version != 4 {
+    if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
         die_simple("Unsupported bytecode version");
     }
     let count = read_u32(&mut file);
@@ -218,8 +263,10 @@ pub fn read_bytecode(path: &Path) -> Vec<Instr> {
             code.push(read_instr_v2(&mut file));
         } else if version == 3 {
             code.push(read_instr_v3(&mut file));
-        } else {
+        } else if version == 4 {
             code.push(read_instr_v4(&mut file));
+        } else {
+            code.push(read_instr_v5(&mut file));
         }
     }
     code
@@ -241,6 +288,10 @@ fn write_instr(file: &mut File, instr: &Instr) {
         }
         Instr::ReadLine => write_u8(file, 24),
         Instr::ToInt => write_u8(file, 25),
+        Instr::StrLen => write_u8(file, 26),
+        Instr::Abs => write_u8(file, 27),
+        Instr::Min => write_u8(file, 28),
+        Instr::Max => write_u8(file, 29),
         Instr::LoadVar(name) => {
             write_u8(file, 3);
             write_string(file, name);
@@ -367,6 +418,41 @@ fn read_instr_v4(file: &mut File) -> Instr {
         23 => Instr::PrintBool,
         24 => Instr::ReadLine,
         25 => Instr::ToInt,
+        _ => die_simple("Invalid bytecode instruction"),
+    }
+}
+
+fn read_instr_v5(file: &mut File) -> Instr {
+    match read_u8(file) {
+        1 => Instr::PushInt(read_i64(file)),
+        2 => Instr::PushStr(read_string(file)),
+        3 => Instr::LoadVar(read_string(file)),
+        4 => Instr::StoreVar(read_string(file)),
+        5 => Instr::Add,
+        6 => Instr::Sub,
+        7 => Instr::Mul,
+        8 => Instr::Div,
+        9 => Instr::ConcatStr,
+        10 => Instr::PrintInt,
+        11 => Instr::PrintStr,
+        12 => Instr::PrintSpace,
+        13 => Instr::PrintNewline,
+        14 => Instr::PushBool(read_u8(file) != 0),
+        15 => Instr::CmpEq,
+        16 => Instr::CmpNe,
+        17 => Instr::CmpLt,
+        18 => Instr::CmpLte,
+        19 => Instr::CmpGt,
+        20 => Instr::CmpGte,
+        21 => Instr::Jump(read_u32(file) as usize),
+        22 => Instr::JumpIfFalse(read_u32(file) as usize),
+        23 => Instr::PrintBool,
+        24 => Instr::ReadLine,
+        25 => Instr::ToInt,
+        26 => Instr::StrLen,
+        27 => Instr::Abs,
+        28 => Instr::Min,
+        29 => Instr::Max,
         _ => die_simple("Invalid bytecode instruction"),
     }
 }

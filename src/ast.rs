@@ -8,6 +8,7 @@ pub enum Stmt {
     Print(Vec<Expr>),
     Let { name: String, expr: Expr },
     Set { name: String, expr: Expr },
+    Use { path: String, alias: Option<String> },
     If {
         cond: Expr,
         then_body: Vec<Stmt>,

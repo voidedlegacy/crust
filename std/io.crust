@@ -1,0 +1,6 @@
+# std::io
+# Functions:
+# - std::io::read_line()
+# - std::io::read_line("prompt")
+# - std::io::read_int()
+# - std::io::read_int("prompt")

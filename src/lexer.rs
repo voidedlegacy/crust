@@ -134,8 +134,17 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
             _ if is_ident_start(c) => {
                 let start = i;
                 i += 1;
-                while i < chars.len() && is_ident_continue(chars[i]) {
-                    i += 1;
+                while i < chars.len() {
+                    let next = chars[i];
+                    if is_ident_continue(next) {
+                        i += 1;
+                        continue;
+                    }
+                    if next == ':' && i + 1 < chars.len() && chars[i + 1] == ':' {
+                        i += 2;
+                        continue;
+                    }
+                    break;
                 }
                 tokens.push(Token::Ident(line[start..i].to_string()));
             }
