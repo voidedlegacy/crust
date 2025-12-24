@@ -18,6 +18,9 @@ pub enum Token {
     Gt,
     Gte,
     Colon,
+    Semicolon,
+    LBrace,
+    RBrace,
     LParen,
     RParen,
 }
@@ -90,6 +93,18 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
             }
             ':' => {
                 tokens.push(Token::Colon);
+                i += 1;
+            }
+            ';' => {
+                tokens.push(Token::Semicolon);
+                i += 1;
+            }
+            '{' => {
+                tokens.push(Token::LBrace);
+                i += 1;
+            }
+            '}' => {
+                tokens.push(Token::RBrace);
                 i += 1;
             }
             '(' => {

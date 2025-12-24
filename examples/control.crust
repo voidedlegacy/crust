@@ -1,7 +1,7 @@
 let i = 0
 while i < 3:
 print "i =", i
-let i = i + 1
+set i = i + 1
 end
 
 let x = 2

@@ -17,15 +17,23 @@ pub fn type_check(program: crate::ast::Program) -> TypedProgram {
                 stmts.push(TypedStmt::Print(typed_exprs));
             }
             Stmt::Let { name, expr } => {
-                let typed = type_expr(&expr, &env);
-                match env.get(&name) {
-                    Some(existing) if *existing != typed.ty => {
-                        die_simple(&format!("Type mismatch assigning '{}'", name));
-                    }
-                    _ => {}
+                if env.contains_key(&name) {
+                    die_simple(&format!("Variable '{}' already defined", name));
                 }
+                let typed = type_expr(&expr, &env);
                 env.insert(name.clone(), typed.ty.clone());
                 stmts.push(TypedStmt::Let { name, expr: typed });
+            }
+            Stmt::Set { name, expr } => {
+                let existing = env
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| die_simple(&format!("Unknown variable '{}'", name)));
+                let typed = type_expr(&expr, &env);
+                if typed.ty != existing {
+                    die_simple(&format!("Type mismatch assigning '{}'", name));
+                }
+                stmts.push(TypedStmt::Set { name, expr: typed });
             }
             Stmt::If {
                 cond,
@@ -73,15 +81,26 @@ fn type_block(stmts: &[Stmt], mut env: HashMap<String, Type>) -> Vec<TypedStmt> 
                 out.push(TypedStmt::Print(typed_exprs));
             }
             Stmt::Let { name, expr } => {
-                let typed = type_expr(expr, &env);
-                match env.get(name) {
-                    Some(existing) if *existing != typed.ty => {
-                        die_simple(&format!("Type mismatch assigning '{}'", name));
-                    }
-                    _ => {}
+                if env.contains_key(name) {
+                    die_simple(&format!("Variable '{}' already defined", name));
                 }
+                let typed = type_expr(expr, &env);
                 env.insert(name.clone(), typed.ty.clone());
                 out.push(TypedStmt::Let {
+                    name: name.clone(),
+                    expr: typed,
+                });
+            }
+            Stmt::Set { name, expr } => {
+                let existing = env
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| die_simple(&format!("Unknown variable '{}'", name)));
+                let typed = type_expr(expr, &env);
+                if typed.ty != existing {
+                    die_simple(&format!("Type mismatch assigning '{}'", name));
+                }
+                out.push(TypedStmt::Set {
                     name: name.clone(),
                     expr: typed,
                 });
@@ -140,6 +159,43 @@ fn type_expr(expr: &Expr, env: &HashMap<String, Type>) -> TypedExpr {
             },
             None => die_simple(&format!("Unknown variable '{}'", name)),
         },
+        Expr::Call { name, args } => {
+            let typed_args: Vec<TypedExpr> = args.iter().map(|a| type_expr(a, env)).collect();
+            match name.as_str() {
+                "input" => {
+                    if typed_args.len() > 1 {
+                        die_simple("input() takes zero or one argument");
+                    }
+                    if typed_args.len() == 1 && typed_args[0].ty != Type::Str {
+                        die_simple("input() prompt must be a string");
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Str,
+                    }
+                }
+                "int" => {
+                    if typed_args.len() != 1 {
+                        die_simple("int() expects exactly one argument");
+                    }
+                    match typed_args[0].ty {
+                        Type::Int | Type::Str => {}
+                        _ => die_simple("int() expects a string or int argument"),
+                    }
+                    TypedExpr {
+                        kind: TypedExprKind::Call {
+                            name: name.clone(),
+                            args: typed_args,
+                        },
+                        ty: Type::Int,
+                    }
+                }
+                _ => die_simple(&format!("Unknown function '{}'", name)),
+            }
+        }
         Expr::Binary { left, op, right } => {
             let left_t = type_expr(left, env);
             let right_t = type_expr(right, env);

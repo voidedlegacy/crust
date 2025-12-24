@@ -25,6 +25,27 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
             Instr::PushInt(v) => stack.push(Value::Int(*v)),
             Instr::PushStr(s) => stack.push(Value::Str(s.clone())),
             Instr::PushBool(v) => stack.push(Value::Bool(*v)),
+            Instr::ReadLine => {
+                out.flush().ok();
+                let line = read_line_from_stdin();
+                stack.push(Value::Str(line));
+            }
+            Instr::ToInt => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on ToInt");
+                });
+                match value {
+                    Value::Int(v) => stack.push(Value::Int(v)),
+                    Value::Str(s) => {
+                        let trimmed = s.trim();
+                        let v: i64 = trimmed.parse().unwrap_or_else(|_| {
+                            die_simple("int() failed to parse input");
+                        });
+                        stack.push(Value::Int(v));
+                    }
+                    _ => die_simple("Type error in int()"),
+                }
+            }
             Instr::LoadVar(name) => {
                 let value = vars
                     .get(name)
@@ -176,4 +197,18 @@ fn write_out<W: Write>(out: &mut W, text: &str) {
     out.write_all(text.as_bytes()).unwrap_or_else(|_| {
         die_simple("Failed to write output");
     });
+}
+
+fn read_line_from_stdin() -> String {
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).unwrap_or_else(|_| {
+        die_simple("Failed to read input");
+    });
+    if line.ends_with('\n') {
+        line.pop();
+        if line.ends_with('\r') {
+            line.pop();
+        }
+    }
+    line
 }

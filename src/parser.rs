@@ -21,9 +21,16 @@ fn lex_lines(source: &str) -> Vec<Line> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let tokens = lex_line(trimmed, line_no);
+        let mut tokens = lex_line(trimmed, line_no);
         if tokens.is_empty() {
             continue;
+        }
+        if let Some((left, right)) = split_rbrace_else(&tokens) {
+            lines.push(Line {
+                line_no,
+                tokens: left,
+            });
+            tokens = right;
         }
         lines.push(Line { line_no, tokens });
     }
@@ -33,6 +40,28 @@ fn lex_lines(source: &str) -> Vec<Line> {
 struct BlockParser {
     lines: Vec<Line>,
     pos: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockStyle {
+    End,
+    Brace,
+}
+
+impl BlockStyle {
+    fn stop_keywords_for_then(self) -> &'static [&'static str] {
+        match self {
+            BlockStyle::End => &["else", "end"],
+            BlockStyle::Brace => &["}"],
+        }
+    }
+
+    fn stop_keywords_for_loop(self) -> &'static [&'static str] {
+        match self {
+            BlockStyle::End => &["end"],
+            BlockStyle::Brace => &["}"],
+        }
+    }
 }
 
 impl BlockParser {
@@ -64,7 +93,9 @@ impl BlockParser {
         match kw.as_str() {
             "print" => {
                 self.pos += 1;
-                let mut parser = ExprParser::new(rest.to_vec(), line_no);
+                let mut rest = rest;
+                strip_trailing_semicolons(&mut rest);
+                let mut parser = ExprParser::new(rest, line_no);
                 let exprs = parser.parse_expr_list();
                 parser.expect_end();
                 if exprs.is_empty() {
@@ -80,23 +111,64 @@ impl BlockParser {
                     _ => die(line_no, "Expected identifier after 'let'"),
                 };
                 parser.expect(Token::Eq, "Expected '=' after variable name");
-                let mut expr_parser = ExprParser::new(parser.remaining_tokens(), line_no);
+                let mut expr_tokens = parser.remaining_tokens();
+                strip_trailing_semicolons(&mut expr_tokens);
+                let mut expr_parser = ExprParser::new(expr_tokens, line_no);
                 let expr = expr_parser.parse_expr();
                 expr_parser.expect_end();
                 Stmt::Let { name, expr }
             }
-            "if" => {
-                let cond = parse_condition_line(line_no, &rest);
+            "set" => {
                 self.pos += 1;
-                let then_body = self.parse_block(Some(&["else", "end"]));
-                let else_body = if self.match_keyword_line("else") {
-                    self.parse_block(Some(&["end"]))
-                } else {
-                    Vec::new()
+                let mut parser = LineParser::new(rest.to_vec(), line_no);
+                let name = match parser.next() {
+                    Some(Token::Ident(s)) => s,
+                    _ => die(line_no, "Expected identifier after 'set'"),
                 };
-                if !self.match_keyword_line("end") {
-                    die(line_no, "Expected 'end' to close if");
-                }
+                parser.expect(Token::Eq, "Expected '=' after variable name");
+                let mut expr_tokens = parser.remaining_tokens();
+                strip_trailing_semicolons(&mut expr_tokens);
+                let mut expr_parser = ExprParser::new(expr_tokens, line_no);
+                let expr = expr_parser.parse_expr();
+                expr_parser.expect_end();
+                Stmt::Set { name, expr }
+            }
+            "if" => {
+                let (cond, style) = parse_condition_line(line_no, &rest);
+                self.pos += 1;
+                let then_body = self.parse_block(Some(style.stop_keywords_for_then()));
+                let else_body = if style == BlockStyle::Brace {
+                    if !self.match_keyword_line("}") {
+                        die(line_no, "Expected '}' to close if block");
+                    }
+                    if let Some(else_style) = self.peek_keyword_style("else") {
+                        if else_style != BlockStyle::Brace {
+                            die(line_no, "Brace-style if requires 'else {'");
+                        }
+                        self.pos += 1;
+                        let else_body = self.parse_block(Some(&["}"]));
+                        if !self.match_keyword_line("}") {
+                            die(line_no, "Expected '}' to close else block");
+                        }
+                        else_body
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    let else_body = if let Some(else_style) = self.peek_keyword_style("else") {
+                        if else_style != BlockStyle::End {
+                            die(line_no, "End-style if requires 'else' without braces");
+                        }
+                        self.pos += 1;
+                        self.parse_block(Some(&["end"]))
+                    } else {
+                        Vec::new()
+                    };
+                    if !self.match_keyword_line("end") {
+                        die(line_no, "Expected 'end' to close if");
+                    }
+                    else_body
+                };
                 Stmt::If {
                     cond,
                     then_body,
@@ -104,10 +176,14 @@ impl BlockParser {
                 }
             }
             "while" => {
-                let cond = parse_condition_line(line_no, &rest);
+                let (cond, style) = parse_condition_line(line_no, &rest);
                 self.pos += 1;
-                let body = self.parse_block(Some(&["end"]));
-                if !self.match_keyword_line("end") {
+                let body = self.parse_block(Some(style.stop_keywords_for_loop()));
+                if style == BlockStyle::Brace {
+                    if !self.match_keyword_line("}") {
+                        die(line_no, "Expected '}' to close while block");
+                    }
+                } else if !self.match_keyword_line("end") {
                     die(line_no, "Expected 'end' to close while");
                 }
                 Stmt::While { cond, body }
@@ -115,14 +191,23 @@ impl BlockParser {
             "else" | "end" => {
                 die(line_no, "Unexpected block delimiter");
             }
-            _ => die(line_no, "Unknown statement. Use 'let', 'print', 'if', or 'while'."),
+            _ => die(
+                line_no,
+                "Unknown statement. Use 'let', 'set', 'print', 'if', or 'while'.",
+            ),
         }
     }
 
     fn peek_keyword(&self) -> Option<&str> {
-        self.lines.get(self.pos).and_then(|line| match line.tokens.first() {
-            Some(Token::Ident(s)) => Some(s.as_str()),
-            _ => None,
+        self.lines.get(self.pos).and_then(|line| {
+            if is_line_only_rbrace(&line.tokens) {
+                Some("}")
+            } else {
+                match line.tokens.first() {
+                    Some(Token::Ident(s)) => Some(s.as_str()),
+                    _ => None,
+                }
+            }
         })
     }
 
@@ -131,51 +216,110 @@ impl BlockParser {
             return false;
         }
         let line = &self.lines[self.pos];
-        if let Some(Token::Ident(kw)) = line.tokens.first() {
-            if kw == keyword && is_line_only_keyword(&line.tokens) {
+        if keyword == "}" {
+            if is_line_only_rbrace(&line.tokens) {
                 self.pos += 1;
                 return true;
             }
+            return false;
+        }
+        if let Some(style) = keyword_line_style(&line.tokens, line.line_no, keyword) {
+            let _ = style;
+            self.pos += 1;
+            return true;
         }
         false
     }
+
+    fn peek_keyword_style(&self, keyword: &str) -> Option<BlockStyle> {
+        if self.pos >= self.lines.len() {
+            return None;
+        }
+        let line = &self.lines[self.pos];
+        keyword_line_style(&line.tokens, line.line_no, keyword)
+    }
 }
 
-fn parse_condition_line(line_no: usize, tokens: &[Token]) -> Expr {
-    let tokens = strip_optional_colon(tokens, line_no);
+fn parse_condition_line(line_no: usize, tokens: &[Token]) -> (Expr, BlockStyle) {
+    let mut tokens = tokens.to_vec();
+    strip_trailing_semicolons(&mut tokens);
+    let mut style = BlockStyle::End;
+    if matches!(tokens.last(), Some(Token::LBrace)) {
+        tokens.pop();
+        style = BlockStyle::Brace;
+    }
+    if matches!(tokens.last(), Some(Token::Colon)) {
+        tokens.pop();
+    }
     if tokens.is_empty() {
         die(line_no, "Expected a condition expression");
     }
-    let mut parser = ExprParser::new(tokens.to_vec(), line_no);
+    let mut parser = ExprParser::new(tokens, line_no);
     let expr = parser.parse_expr();
     parser.expect_end();
-    expr
+    (expr, style)
 }
 
-fn is_line_only_keyword(tokens: &[Token]) -> bool {
-    match tokens {
-        [Token::Ident(_)] => true,
-        [Token::Ident(_), Token::Colon] => true,
-        _ => false,
+fn keyword_line_style(tokens: &[Token], line_no: usize, keyword: &str) -> Option<BlockStyle> {
+    let mut iter = tokens.iter();
+    match iter.next() {
+        Some(Token::Ident(s)) if s == keyword => {}
+        _ => return None,
     }
+    let mut rest: Vec<Token> = iter.cloned().collect();
+    strip_trailing_semicolons(&mut rest);
+    let mut style = BlockStyle::End;
+    if matches!(rest.last(), Some(Token::LBrace)) {
+        rest.pop();
+        style = BlockStyle::Brace;
+    }
+    if matches!(rest.last(), Some(Token::Colon)) {
+        rest.pop();
+    }
+    if !rest.is_empty() {
+        die(line_no, "Unexpected tokens after keyword");
+    }
+    Some(style)
 }
 
-fn strip_optional_colon<'a>(tokens: &'a [Token], line_no: usize) -> &'a [Token] {
-    if matches!(tokens.last(), Some(Token::Colon)) {
-        if tokens.len() == 1 {
-            die(line_no, "Unexpected ':'");
-        }
-        &tokens[..tokens.len() - 1]
-    } else {
-        tokens
+fn is_line_only_rbrace(tokens: &[Token]) -> bool {
+    let mut rest = tokens.to_vec();
+    strip_trailing_semicolons(&mut rest);
+    matches!(rest.as_slice(), [Token::RBrace])
+}
+
+fn strip_trailing_semicolons(tokens: &mut Vec<Token>) {
+    while matches!(tokens.last(), Some(Token::Semicolon)) {
+        tokens.pop();
     }
 }
 
 fn split_first(tokens: &[Token], line_no: usize) -> (String, Vec<Token>) {
     match tokens.first() {
         Some(Token::Ident(s)) => (s.clone(), tokens[1..].to_vec()),
+        Some(Token::RBrace) => die(line_no, "Unexpected '}'"),
         _ => die(line_no, "Expected a statement"),
     }
+}
+
+fn split_rbrace_else(tokens: &[Token]) -> Option<(Vec<Token>, Vec<Token>)> {
+    if !matches!(tokens.first(), Some(Token::RBrace)) {
+        return None;
+    }
+    let mut idx = 1;
+    while idx < tokens.len() && matches!(tokens[idx], Token::Semicolon) {
+        idx += 1;
+    }
+    if idx < tokens.len() {
+        if let Token::Ident(ref s) = tokens[idx] {
+            if s == "else" {
+                let left = tokens[..1].to_vec();
+                let right = tokens[idx..].to_vec();
+                return Some((left, right));
+            }
+        }
+    }
+    None
 }
 
 struct LineParser {
@@ -311,7 +455,15 @@ impl ExprParser {
             Some(Token::Str(s)) => Expr::Str(s),
             Some(Token::Ident(s)) if s == "true" => Expr::Bool(true),
             Some(Token::Ident(s)) if s == "false" => Expr::Bool(false),
-            Some(Token::Ident(s)) => Expr::Var(s),
+            Some(Token::Ident(s)) => {
+                if matches!(self.peek(), Some(Token::LParen)) {
+                    self.next();
+                    let args = self.parse_call_args();
+                    Expr::Call { name: s, args }
+                } else {
+                    Expr::Var(s)
+                }
+            }
             Some(Token::LParen) => {
                 let expr = self.parse_expr();
                 self.expect(Token::RParen, "Expected ')'");
@@ -326,6 +478,21 @@ impl ExprParser {
             Some(t) if t == token => {}
             _ => die(self.line_no, msg),
         }
+    }
+
+    fn parse_call_args(&mut self) -> Vec<Expr> {
+        if matches!(self.peek(), Some(Token::RParen)) {
+            self.next();
+            return Vec::new();
+        }
+        let mut args = Vec::new();
+        args.push(self.parse_expr());
+        while matches!(self.peek(), Some(Token::Comma)) {
+            self.next();
+            args.push(self.parse_expr());
+        }
+        self.expect(Token::RParen, "Expected ')'");
+        args
     }
 
     fn expect_end(&mut self) {

@@ -1,0 +1,28 @@
+print "Simple calculator (type q to quit)"
+let done = false
+while done == false:
+let op = input("Op (+ - * / or q): ")
+if op == "q":
+set done = true
+else:
+let a = int(input("a: "))
+let b = int(input("b: "))
+if op == "+":
+print a + b
+else:
+if op == "-":
+print a - b
+else:
+if op == "*":
+print a * b
+else:
+if op == "/":
+print a / b
+else:
+print "Unknown op"
+end
+end
+end
+end
+end
+end

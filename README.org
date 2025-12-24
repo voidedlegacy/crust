@@ -6,13 +6,17 @@ built-in VM.
 ** Language
 - Statements:
   - =let name = expr=
+  - =set name = expr=
   - =print expr, expr, ...=
   - if expr: ... else: ... end
   - while expr: ... end
   - Blocks end with end; a trailing ":" is optional
-  - =let= can reassign an existing variable if the type matches
+  - =let= declares a new variable; =set= reassigns an existing one
+  - C-style blocks are also supported: =if (expr) { ... }= and =while (expr) { ... }=
+  - Trailing semicolons are optional for statements
 - Expressions:
   - integers, strings, booleans, identifiers
+  - function calls: =input()=, =input("prompt")=, =int(x)=
   - boolean literals: =true= and =false=
   - arithmetic operators: + - * /
   - comparison operators: == != < <= > >=
@@ -54,9 +58,29 @@ print "hello", name, "answer:", x
 #+end_src
 
 #+begin_src text
+let a = int(input())
+let b = int(input())
+print a + b
+#+end_src
+
+#+begin_src text
+let a = int(input("Enter a: "))
+let b = int(input("Enter b: "))
+print a + b
+#+end_src
+
+#+begin_src text
 let i = 0
 while i < 3:
 print i
-let i = i + 1
+set i = i + 1
 end
+#+end_src
+
+#+begin_src text
+let i = 0;
+while (i < 3) {
+print i;
+set i = i + 1;
+}
 #+end_src

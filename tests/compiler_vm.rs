@@ -47,6 +47,33 @@ fn bytecode_print_spacing() {
 }
 
 #[test]
+fn bytecode_input_int() {
+    let program = parse_program("let x = int(input())\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let expected = vec![
+        Instr::ReadLine,
+        Instr::ToInt,
+        Instr::StoreVar("x".to_string()),
+    ];
+    assert_eq!(code, expected);
+}
+
+#[test]
+fn bytecode_input_prompt() {
+    let program = parse_program("let x = input(\"A: \")\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let expected = vec![
+        Instr::PushStr("A: ".to_string()),
+        Instr::PrintStr,
+        Instr::ReadLine,
+        Instr::StoreVar("x".to_string()),
+    ];
+    assert_eq!(code, expected);
+}
+
+#[test]
 fn vm_runs_and_formats_output() {
     let program = parse_program(
         "let first = \"Hello\"\n\
@@ -108,7 +135,7 @@ fn vm_while_loop() {
         "let i = 0\n\
          while i < 3:\n\
          print i\n\
-         let i = i + 1\n\
+         set i = i + 1\n\
          end\n",
     );
     let typed = type_check(program);
@@ -117,4 +144,43 @@ fn vm_while_loop() {
     run_bytecode_with_writer(&code, &mut out);
     let output = String::from_utf8(out).expect("utf8");
     assert_eq!(output, "0\n1\n2\n");
+}
+
+#[test]
+fn vm_c_style_while() {
+    let program = parse_program(
+        "let i = 0;\n\
+         while (i < 3) {\n\
+         print i;\n\
+         set i = i + 1;\n\
+         }\n",
+    );
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "0\n1\n2\n");
+}
+
+#[test]
+fn vm_c_style_if_else() {
+    let program = parse_program("let x = 1;\nif (x == 2) {\nprint \"yes\";\n} else {\nprint \"no\";\n}\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "no\n");
+}
+
+#[test]
+fn vm_set_assignment() {
+    let program = parse_program("let x = 1\nset x = 3\nprint x\n");
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "3\n");
 }

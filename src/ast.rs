@@ -7,6 +7,7 @@ pub struct Program {
 pub enum Stmt {
     Print(Vec<Expr>),
     Let { name: String, expr: Expr },
+    Set { name: String, expr: Expr },
     If {
         cond: Expr,
         then_body: Vec<Stmt>,
@@ -21,6 +22,10 @@ pub enum Expr {
     Str(String),
     Bool(bool),
     Var(String),
+    Call {
+        name: String,
+        args: Vec<Expr>,
+    },
     Binary {
         left: Box<Expr>,
         op: Op,
@@ -58,6 +63,7 @@ pub struct TypedProgram {
 pub enum TypedStmt {
     Print(Vec<TypedExpr>),
     Let { name: String, expr: TypedExpr },
+    Set { name: String, expr: TypedExpr },
     If {
         cond: TypedExpr,
         then_body: Vec<TypedStmt>,
@@ -78,6 +84,10 @@ pub enum TypedExprKind {
     Str(String),
     Bool(bool),
     Var(String),
+    Call {
+        name: String,
+        args: Vec<TypedExpr>,
+    },
     Binary {
         left: Box<TypedExpr>,
         op: Op,

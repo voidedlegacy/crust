@@ -10,6 +10,8 @@ pub enum Instr {
     PushInt(i64),
     PushStr(String),
     PushBool(bool),
+    ReadLine,
+    ToInt,
     LoadVar(String),
     StoreVar(String),
     Add,
@@ -60,6 +62,10 @@ fn emit_stmt(stmt: &TypedStmt, out: &mut Vec<Instr>) {
             emit_expr(expr, out);
             out.push(Instr::StoreVar(name.clone()));
         }
+        TypedStmt::Set { name, expr } => {
+            emit_expr(expr, out);
+            out.push(Instr::StoreVar(name.clone()));
+        }
         TypedStmt::If {
             cond,
             then_body,
@@ -107,6 +113,26 @@ fn emit_expr(expr: &TypedExpr, out: &mut Vec<Instr>) {
         TypedExprKind::Str(s) => out.push(Instr::PushStr(s.clone())),
         TypedExprKind::Bool(v) => out.push(Instr::PushBool(*v)),
         TypedExprKind::Var(name) => out.push(Instr::LoadVar(name.clone())),
+        TypedExprKind::Call { name, args } => match name.as_str() {
+            "input" => {
+                if args.len() > 1 {
+                    die_simple("input() takes zero or one argument");
+                }
+                if args.len() == 1 {
+                    emit_expr(&args[0], out);
+                    out.push(Instr::PrintStr);
+                }
+                out.push(Instr::ReadLine);
+            }
+            "int" => {
+                if args.len() != 1 {
+                    die_simple("int() expects exactly one argument");
+                }
+                emit_expr(&args[0], out);
+                out.push(Instr::ToInt);
+            }
+            _ => die_simple(&format!("Unknown function '{}'", name)),
+        },
         TypedExprKind::Binary { left, op, right } => {
             emit_expr(left, out);
             emit_expr(right, out);
@@ -150,7 +176,7 @@ pub fn write_bytecode(path: &Path, code: &[Instr]) {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
-    file.write_all(&[3]).unwrap_or_else(|e| {
+    file.write_all(&[4]).unwrap_or_else(|e| {
         eprintln!("Failed to write {}: {}", path.display(), e);
         std::process::exit(1);
     });
@@ -173,7 +199,7 @@ pub fn read_bytecode(path: &Path) -> Vec<Instr> {
         die_simple("Invalid bytecode file");
     }
     let version = read_u8(&mut file);
-    if version != 1 && version != 2 && version != 3 {
+    if version != 1 && version != 2 && version != 3 && version != 4 {
         die_simple("Unsupported bytecode version");
     }
     let count = read_u32(&mut file);
@@ -190,8 +216,10 @@ pub fn read_bytecode(path: &Path) -> Vec<Instr> {
             }
         } else if version == 2 {
             code.push(read_instr_v2(&mut file));
-        } else {
+        } else if version == 3 {
             code.push(read_instr_v3(&mut file));
+        } else {
+            code.push(read_instr_v4(&mut file));
         }
     }
     code
@@ -211,6 +239,8 @@ fn write_instr(file: &mut File, instr: &Instr) {
             write_u8(file, 14);
             write_u8(file, if *v { 1 } else { 0 });
         }
+        Instr::ReadLine => write_u8(file, 24),
+        Instr::ToInt => write_u8(file, 25),
         Instr::LoadVar(name) => {
             write_u8(file, 3);
             write_string(file, name);
@@ -306,6 +336,37 @@ fn read_instr_v3(file: &mut File) -> Instr {
         21 => Instr::Jump(read_u32(file) as usize),
         22 => Instr::JumpIfFalse(read_u32(file) as usize),
         23 => Instr::PrintBool,
+        _ => die_simple("Invalid bytecode instruction"),
+    }
+}
+
+fn read_instr_v4(file: &mut File) -> Instr {
+    match read_u8(file) {
+        1 => Instr::PushInt(read_i64(file)),
+        2 => Instr::PushStr(read_string(file)),
+        3 => Instr::LoadVar(read_string(file)),
+        4 => Instr::StoreVar(read_string(file)),
+        5 => Instr::Add,
+        6 => Instr::Sub,
+        7 => Instr::Mul,
+        8 => Instr::Div,
+        9 => Instr::ConcatStr,
+        10 => Instr::PrintInt,
+        11 => Instr::PrintStr,
+        12 => Instr::PrintSpace,
+        13 => Instr::PrintNewline,
+        14 => Instr::PushBool(read_u8(file) != 0),
+        15 => Instr::CmpEq,
+        16 => Instr::CmpNe,
+        17 => Instr::CmpLt,
+        18 => Instr::CmpLte,
+        19 => Instr::CmpGt,
+        20 => Instr::CmpGte,
+        21 => Instr::Jump(read_u32(file) as usize),
+        22 => Instr::JumpIfFalse(read_u32(file) as usize),
+        23 => Instr::PrintBool,
+        24 => Instr::ReadLine,
+        25 => Instr::ToInt,
         _ => die_simple("Invalid bytecode instruction"),
     }
 }
