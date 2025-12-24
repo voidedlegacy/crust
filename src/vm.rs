@@ -11,6 +11,11 @@ enum Value {
 }
 
 pub fn run_bytecode(code: &[Instr]) {
+    let mut stdout = io::stdout();
+    run_bytecode_with_writer(code, &mut stdout);
+}
+
+pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
     let mut stack: Vec<Value> = Vec::new();
     let mut vars: HashMap<String, Value> = HashMap::new();
 
@@ -52,7 +57,7 @@ pub fn run_bytecode(code: &[Instr]) {
                     die_simple("Stack underflow on PrintInt");
                 });
                 match value {
-                    Value::Int(v) => print!("{}", v),
+                    Value::Int(v) => write_out(out, &v.to_string()),
                     _ => die_simple("Type error on PrintInt"),
                 }
             }
@@ -61,14 +66,14 @@ pub fn run_bytecode(code: &[Instr]) {
                     die_simple("Stack underflow on PrintStr");
                 });
                 match value {
-                    Value::Str(s) => print!("{}", s),
+                    Value::Str(s) => write_out(out, &s),
                     _ => die_simple("Type error on PrintStr"),
                 }
             }
-            Instr::PrintSpace => print!(" "),
+            Instr::PrintSpace => write_out(out, " "),
             Instr::PrintNewline => {
-                println!();
-                io::stdout().flush().ok();
+                write_out(out, "\n");
+                out.flush().ok();
             }
         }
     }
@@ -85,4 +90,10 @@ fn bin_int_op(stack: &mut Vec<Value>, op: fn(i64, i64) -> i64) {
         (Value::Int(a), Value::Int(b)) => stack.push(Value::Int(op(a, b))),
         _ => die_simple("Type error in arithmetic"),
     }
+}
+
+fn write_out<W: Write>(out: &mut W, text: &str) {
+    out.write_all(text.as_bytes()).unwrap_or_else(|_| {
+        die_simple("Failed to write output");
+    });
 }
