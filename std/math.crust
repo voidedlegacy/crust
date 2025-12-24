@@ -1,5 +1,24 @@
 # std::math
-# Functions:
-# - std::math::abs(x)
-# - std::math::min(a, b)
-# - std::math::max(a, b)
+fn abs(x: int) -> int:
+if x < 0:
+return 0 - x
+else:
+return x
+end
+end
+
+fn min(a: int, b: int) -> int:
+if a < b:
+return a
+else:
+return b
+end
+end
+
+fn max(a: int, b: int) -> int:
+ if a > b:
+return a
+else:
+return b
+end
+end

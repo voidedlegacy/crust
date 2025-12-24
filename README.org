@@ -5,10 +5,15 @@ built-in VM.
 
 ** Language
 - Statements:
+  - =struct Name { field: type; ... }= (or =struct Name:= ... =end=)
+  - =fn name(args) -> type { ... }= (or =fn name(args) -> type:= ... =end=)
   - =let name = expr=
   - =set name = expr=
-  - =use "path"= or =use "path" as name=
+- =use "path"= or =use "path" as name= (file paths)
+- =use std::io= or =use foo::bar= (module paths)
+  - =mod name=
   - =print expr, expr, ...=
+  - =return expr=
   - if expr: ... else: ... end
   - while expr: ... end
   - Blocks end with end; a trailing ":" is optional
@@ -23,6 +28,9 @@ built-in VM.
   - function calls: =input()=, =input("prompt")=, =int(x)=
   - std functions: =std::io::read_line=, =std::io::read_int=, =std::string::len=, =std::math::abs=, =std::math::min=, =std::math::max=
   - std functions are available when the prelude is loaded (default)
+  - struct literals: =Point { x: 1, y: 2 }=
+  - field access: =p.x=
+  - type names: =int=, =str=, =bool=, or a struct name
   - boolean literals: =true= and =false=
   - arithmetic operators: + - * /
   - comparison operators: == != < <= > >=
@@ -52,7 +60,8 @@ cargo build
 ** Standard Library
 Crust ships with a tiny standard library in =std/=. The compiler auto-loads
 =std/prelude.crust= when present, which makes the =std::io=, =std::math=, and
-=std::string= modules available.
+=std::string= modules available. Some functions are implemented in Crust
+directly (see =std/math.crust=), while others are built-ins.
 
 Builtin std functions:
 - =std::io::read_line()=
@@ -107,6 +116,11 @@ print m::x
 #+end_src
 
 #+begin_src text
+mod mod_a
+print mod_a::x
+#+end_src
+
+#+begin_src text
 let i = 0
 while i < 3:
 print i
@@ -120,6 +134,22 @@ while (i < 3) {
 print i;
 set i = i + 1;
 }
+#+end_src
+
+#+begin_src text
+fn add(a: int, b: int) -> int {
+return a + b;
+}
+print add(2, 3)
+#+end_src
+
+#+begin_src text
+struct Point {
+x: int;
+y: int;
+}
+let p = Point { x: 1, y: 2 }
+print p.x, p.y
 #+end_src
 
 #+begin_src text

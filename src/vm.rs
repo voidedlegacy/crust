@@ -9,6 +9,22 @@ enum Value {
     Int(i64),
     Str(String),
     Bool(bool),
+    Struct {
+        name: String,
+        fields: HashMap<String, Value>,
+    },
+}
+
+#[derive(Debug)]
+struct Frame {
+    locals: HashMap<String, Value>,
+    return_ip: usize,
+}
+
+#[derive(Debug)]
+struct FuncInfo {
+    entry: usize,
+    params: Vec<String>,
 }
 
 pub fn run_bytecode(code: &[Instr]) {
@@ -18,8 +34,11 @@ pub fn run_bytecode(code: &[Instr]) {
 
 pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
     let mut stack: Vec<Value> = Vec::new();
-    let mut vars: HashMap<String, Value> = HashMap::new();
+    let mut globals: HashMap<String, Value> = HashMap::new();
+    let mut frames: Vec<Frame> = Vec::new();
+    let func_table = build_func_table(code);
     let mut ip: usize = 0;
+
     while ip < code.len() {
         match &code[ip] {
             Instr::PushInt(v) => stack.push(Value::Int(*v)),
@@ -88,18 +107,80 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
                     _ => die_simple("Type error in max()"),
                 }
             }
+            Instr::FuncDef { .. } => {}
+            Instr::Call { name, argc } => {
+                let func = func_table.get(name).unwrap_or_else(|| {
+                    die_simple(&format!("Unknown function '{}'", name));
+                });
+                if *argc != func.params.len() {
+                    die_simple("Wrong number of arguments in call");
+                }
+                let mut args = Vec::with_capacity(*argc);
+                for _ in 0..*argc {
+                    args.push(stack.pop().unwrap_or_else(|| {
+                        die_simple("Stack underflow on Call");
+                    }));
+                }
+                args.reverse();
+                let mut locals = HashMap::new();
+                for (param, value) in func.params.iter().zip(args.into_iter()) {
+                    locals.insert(param.clone(), value);
+                }
+                frames.push(Frame {
+                    locals,
+                    return_ip: ip + 1,
+                });
+                ip = func.entry;
+                continue;
+            }
+            Instr::Return => {
+                let ret = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on Return");
+                });
+                let frame = frames.pop().unwrap_or_else(|| {
+                    die_simple("Return outside of function");
+                });
+                ip = frame.return_ip;
+                stack.push(ret);
+                continue;
+            }
+            Instr::Halt => break,
+            Instr::MakeStruct { name, fields } => {
+                let mut map = HashMap::new();
+                for field in fields.iter().rev() {
+                    let value = stack.pop().unwrap_or_else(|| {
+                        die_simple("Stack underflow on MakeStruct");
+                    });
+                    map.insert(field.clone(), value);
+                }
+                stack.push(Value::Struct {
+                    name: name.clone(),
+                    fields: map,
+                });
+            }
+            Instr::GetField { name } => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on GetField");
+                });
+                match value {
+                    Value::Struct { fields, .. } => {
+                        let field = fields.get(name).cloned().unwrap_or_else(|| {
+                            die_simple("Unknown field");
+                        });
+                        stack.push(field);
+                    }
+                    _ => die_simple("Field access on non-struct"),
+                }
+            }
             Instr::LoadVar(name) => {
-                let value = vars
-                    .get(name)
-                    .cloned()
-                    .unwrap_or_else(|| die_simple(&format!("Unknown variable '{}'", name)));
+                let value = load_var(name, &frames, &globals);
                 stack.push(value);
             }
             Instr::StoreVar(name) => {
                 let value = stack.pop().unwrap_or_else(|| {
                     die_simple("Stack underflow on StoreVar");
                 });
-                vars.insert(name.clone(), value);
+                store_var(name, value, &mut frames, &mut globals);
             }
             Instr::Add => bin_int_op(&mut stack, |a, b| a + b),
             Instr::Sub => bin_int_op(&mut stack, |a, b| a - b),
@@ -174,6 +255,58 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
             }
         }
         ip += 1;
+    }
+}
+
+fn build_func_table(code: &[Instr]) -> HashMap<String, FuncInfo> {
+    let mut table = HashMap::new();
+    for (idx, instr) in code.iter().enumerate() {
+        if let Instr::FuncDef { name, params } = instr {
+            if table.contains_key(name) {
+                die_simple("Duplicate function definition in bytecode");
+            }
+            table.insert(
+                name.clone(),
+                FuncInfo {
+                    entry: idx + 1,
+                    params: params.clone(),
+                },
+            );
+        }
+    }
+    table
+}
+
+fn load_var(name: &str, frames: &[Frame], globals: &HashMap<String, Value>) -> Value {
+    if let Some(frame) = frames.last() {
+        if let Some(value) = frame.locals.get(name) {
+            return value.clone();
+        }
+    }
+    globals
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| die_simple(&format!("Unknown variable '{}'", name)))
+}
+
+fn store_var(
+    name: &str,
+    value: Value,
+    frames: &mut Vec<Frame>,
+    globals: &mut HashMap<String, Value>,
+) {
+    if let Some(frame) = frames.last_mut() {
+        if frame.locals.contains_key(name) {
+            frame.locals.insert(name.to_string(), value);
+            return;
+        }
+        if globals.contains_key(name) {
+            globals.insert(name.to_string(), value);
+            return;
+        }
+        frame.locals.insert(name.to_string(), value);
+    } else {
+        globals.insert(name.to_string(), value);
     }
 }
 

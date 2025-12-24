@@ -18,6 +18,8 @@ pub enum Token {
     Gt,
     Gte,
     Colon,
+    Dot,
+    Arrow,
     Semicolon,
     LBrace,
     RBrace,
@@ -41,8 +43,13 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
                 i += 1;
             }
             '-' => {
-                tokens.push(Token::Minus);
-                i += 1;
+                if i + 1 < chars.len() && chars[i + 1] == '>' {
+                    tokens.push(Token::Arrow);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Minus);
+                    i += 1;
+                }
             }
             '*' => {
                 tokens.push(Token::Star);
@@ -93,6 +100,10 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
             }
             ':' => {
                 tokens.push(Token::Colon);
+                i += 1;
+            }
+            '.' => {
+                tokens.push(Token::Dot);
                 i += 1;
             }
             ';' => {

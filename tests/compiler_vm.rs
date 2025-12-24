@@ -44,6 +44,7 @@ fn bytecode_print_spacing() {
         Instr::PushStr("b".to_string()),
         Instr::PrintStr,
         Instr::PrintNewline,
+        Instr::Halt,
     ];
     assert_eq!(code, expected);
 }
@@ -57,6 +58,7 @@ fn bytecode_input_int() {
         Instr::ReadLine,
         Instr::ToInt,
         Instr::StoreVar("x".to_string()),
+        Instr::Halt,
     ];
     assert_eq!(code, expected);
 }
@@ -71,6 +73,7 @@ fn bytecode_input_prompt() {
         Instr::PrintStr,
         Instr::ReadLine,
         Instr::StoreVar("x".to_string()),
+        Instr::Halt,
     ];
     assert_eq!(code, expected);
 }
@@ -86,6 +89,7 @@ fn bytecode_std_read_int_prompt() {
         Instr::ReadLine,
         Instr::ToInt,
         Instr::StoreVar("x".to_string()),
+        Instr::Halt,
     ];
     assert_eq!(code, expected);
 }
@@ -222,4 +226,38 @@ fn vm_use_module() {
     run_bytecode_with_writer(&code, &mut out);
     let output = String::from_utf8(out).expect("utf8");
     assert_eq!(output, "7\n");
+}
+
+#[test]
+fn vm_function_call() {
+    let program = parse_program(
+        "fn add(a: int, b: int) -> int {\n\
+         return a + b;\n\
+         }\n\
+         print add(2, 3)\n",
+    );
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "5\n");
+}
+
+#[test]
+fn vm_struct_field_access() {
+    let program = parse_program(
+        "struct Point {\n\
+         x: int;\n\
+         y: int;\n\
+         }\n\
+         let p = Point { x: 1, y: 2 }\n\
+         print p.x, p.y\n",
+    );
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "1 2\n");
 }

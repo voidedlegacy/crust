@@ -1,0 +1,20 @@
+use std::io
+use std::math
+use std::string
+
+struct Point {
+x: int;
+y: int;
+}
+
+fn manhattan(p: Point) -> int:
+return std::math::abs(p.x) + std::math::abs(p.y)
+end
+
+let name = std::io::read_line("Name: ")
+print "Hello", name
+print "Name length:", std::string::len(name)
+
+let p = Point { x: 0 - 3, y: 4 }
+print "Point:", p.x, p.y
+print "Manhattan distance:", manhattan(p)

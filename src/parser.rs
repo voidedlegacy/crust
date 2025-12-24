@@ -1,12 +1,13 @@
-use crate::ast::{Expr, Op, Program, Stmt};
+use crate::ast::{
+    Expr, Field, Function, Op, Param, Program, StructDef, Stmt, Type,
+};
 use crate::lexer::{lex_line, Token};
 use crate::util::die;
 
 pub fn parse_program(source: &str) -> Program {
     let lines = lex_lines(source);
     let mut parser = BlockParser::new(lines);
-    let stmts = parser.parse_block(None);
-    Program { stmts }
+    parser.parse_program()
 }
 
 struct Line {
@@ -67,6 +68,33 @@ impl BlockStyle {
 impl BlockParser {
     fn new(lines: Vec<Line>) -> Self {
         Self { lines, pos: 0 }
+    }
+
+    fn parse_program(&mut self) -> Program {
+        let mut structs = Vec::new();
+        let mut functions = Vec::new();
+        let mut stmts = Vec::new();
+        while self.pos < self.lines.len() {
+            let line = &self.lines[self.pos];
+            let line_no = line.line_no;
+            let (kw, rest) = split_first(&line.tokens, line_no);
+            match kw.as_str() {
+                "struct" => {
+                    structs.push(self.parse_struct(rest, line_no));
+                }
+                "fn" => {
+                    functions.push(self.parse_function(rest, line_no));
+                }
+                _ => {
+                    stmts.push(self.parse_stmt());
+                }
+            }
+        }
+        Program {
+            structs,
+            functions,
+            stmts,
+        }
     }
 
     fn parse_block(&mut self, stop_keywords: Option<&[&str]>) -> Vec<Stmt> {
@@ -138,7 +166,8 @@ impl BlockParser {
                 let mut parser = LineParser::new(rest.to_vec(), line_no);
                 let path = match parser.next() {
                     Some(Token::Str(s)) => s,
-                    _ => die(line_no, "Expected string literal after 'use'"),
+                    Some(Token::Ident(s)) => s,
+                    _ => die(line_no, "Expected string literal or module path after 'use'"),
                 };
                 let mut alias = None;
                 match parser.next() {
@@ -162,6 +191,28 @@ impl BlockParser {
                     None => {}
                 }
                 Stmt::Use { path, alias }
+            }
+            "mod" => {
+                self.pos += 1;
+                let mut parser = LineParser::new(rest.to_vec(), line_no);
+                let name = match parser.next() {
+                    Some(Token::Ident(s)) => s,
+                    _ => die(line_no, "Expected module name after 'mod'"),
+                };
+                ensure_only_semicolons(parser.remaining_tokens(), line_no);
+                Stmt::Use {
+                    path: format!("{}.crust", name),
+                    alias: Some(name),
+                }
+            }
+            "return" => {
+                self.pos += 1;
+                let mut rest = rest;
+                strip_trailing_semicolons(&mut rest);
+                let mut parser = ExprParser::new(rest, line_no);
+                let expr = parser.parse_expr();
+                parser.expect_end();
+                Stmt::Return(expr)
             }
             "if" => {
                 let (cond, style) = parse_condition_line(line_no, &rest);
@@ -223,9 +274,119 @@ impl BlockParser {
             }
             _ => die(
                 line_no,
-                "Unknown statement. Use 'let', 'set', 'use', 'print', 'if', or 'while'.",
+                "Unknown statement. Use 'let', 'set', 'use', 'mod', 'print', 'return', 'if', or 'while'.",
             ),
         }
+    }
+
+    fn parse_struct(&mut self, rest: Vec<Token>, line_no: usize) -> StructDef {
+        let mut parser = LineParser::new(rest, line_no);
+        let name = match parser.next() {
+            Some(Token::Ident(s)) => s,
+            _ => die(line_no, "Expected struct name"),
+        };
+        let mut rest_tokens = parser.remaining_tokens();
+        strip_trailing_semicolons(&mut rest_tokens);
+        let mut style = BlockStyle::End;
+        if matches!(rest_tokens.last(), Some(Token::LBrace)) {
+            rest_tokens.pop();
+            style = BlockStyle::Brace;
+        }
+        if matches!(rest_tokens.last(), Some(Token::Colon)) {
+            rest_tokens.pop();
+        }
+        if !rest_tokens.is_empty() {
+            die(line_no, "Unexpected tokens after struct name");
+        }
+        self.pos += 1;
+        let fields = if style == BlockStyle::Brace {
+            let fields = self.parse_struct_fields();
+            if !self.match_keyword_line("}") {
+                die(line_no, "Expected '}' to close struct");
+            }
+            fields
+        } else {
+            let fields = self.parse_struct_fields_until_end();
+            if !self.match_keyword_line("end") {
+                die(line_no, "Expected 'end' to close struct");
+            }
+            fields
+        };
+        StructDef { name, fields }
+    }
+
+    fn parse_struct_fields(&mut self) -> Vec<Field> {
+        let mut fields = Vec::new();
+        while self.pos < self.lines.len() {
+            if let Some(kw) = self.peek_keyword() {
+                if kw == "}" {
+                    break;
+                }
+            }
+            let line = &self.lines[self.pos];
+            let line_no = line.line_no;
+            let tokens = line.tokens.clone();
+            fields.push(parse_field_line(tokens, line_no));
+            self.pos += 1;
+        }
+        fields
+    }
+
+    fn parse_struct_fields_until_end(&mut self) -> Vec<Field> {
+        let mut fields = Vec::new();
+        while self.pos < self.lines.len() {
+            if let Some(kw) = self.peek_keyword() {
+                if kw == "end" {
+                    break;
+                }
+            }
+            let line = &self.lines[self.pos];
+            let line_no = line.line_no;
+            let tokens = line.tokens.clone();
+            fields.push(parse_field_line(tokens, line_no));
+            self.pos += 1;
+        }
+        fields
+    }
+
+    fn parse_function(&mut self, rest: Vec<Token>, line_no: usize) -> Function {
+        let mut parser = LineParser::new(rest, line_no);
+        let name = match parser.next() {
+            Some(Token::Ident(s)) => s,
+            _ => die(line_no, "Expected function name"),
+        };
+        parser.expect(Token::LParen, "Expected '(' after function name");
+        let params = parse_param_list(&mut parser, line_no);
+        parser.expect(Token::Arrow, "Expected '->' return type");
+        let ret = parse_type_tokens(&mut parser, line_no);
+        let mut rest_tokens = parser.remaining_tokens();
+        strip_trailing_semicolons(&mut rest_tokens);
+        let mut style = BlockStyle::End;
+        if matches!(rest_tokens.last(), Some(Token::LBrace)) {
+            rest_tokens.pop();
+            style = BlockStyle::Brace;
+        }
+        if matches!(rest_tokens.last(), Some(Token::Colon)) {
+            rest_tokens.pop();
+        }
+        if !rest_tokens.is_empty() {
+            die(line_no, "Unexpected tokens after function signature");
+        }
+        self.pos += 1;
+        let body = if style == BlockStyle::Brace {
+            let body = self.parse_block(Some(&["}"]));
+            if !self.match_keyword_line("}") {
+                die(line_no, "Expected '}' to close function");
+            }
+            body
+        } else {
+            let body = self.parse_block(Some(&["end"]));
+            if !self.match_keyword_line("end") {
+                die(line_no, "Expected 'end' to close function");
+            }
+            body
+        };
+        Function { name, params, ret, body }
     }
 
     fn peek_keyword(&self) -> Option<&str> {
@@ -288,6 +449,51 @@ fn parse_condition_line(line_no: usize, tokens: &[Token]) -> (Expr, BlockStyle) 
     let expr = parser.parse_expr();
     parser.expect_end();
     (expr, style)
+}
+
+fn parse_field_line(tokens: Vec<Token>, line_no: usize) -> Field {
+    let mut parser = LineParser::new(tokens, line_no);
+    let name = match parser.next() {
+        Some(Token::Ident(s)) => s,
+        _ => die(line_no, "Expected field name"),
+    };
+    parser.expect(Token::Colon, "Expected ':' in field");
+    let ty = parse_type_tokens(&mut parser, line_no);
+    ensure_only_semicolons(parser.remaining_tokens(), line_no);
+    Field { name, ty }
+}
+
+fn parse_param_list(parser: &mut LineParser, line_no: usize) -> Vec<Param> {
+    let mut params = Vec::new();
+    if matches!(parser.peek(), Some(Token::RParen)) {
+        parser.next();
+        return params;
+    }
+    loop {
+        let name = match parser.next() {
+            Some(Token::Ident(s)) => s,
+            _ => die(line_no, "Expected parameter name"),
+        };
+        parser.expect(Token::Colon, "Expected ':' after parameter name");
+        let ty = parse_type_tokens(parser, line_no);
+        params.push(Param { name, ty });
+        match parser.next() {
+            Some(Token::Comma) => continue,
+            Some(Token::RParen) => break,
+            _ => die(line_no, "Expected ',' or ')' in parameter list"),
+        }
+    }
+    params
+}
+
+fn parse_type_tokens(parser: &mut LineParser, line_no: usize) -> Type {
+    match parser.next() {
+        Some(Token::Ident(s)) if s == "int" => Type::Int,
+        Some(Token::Ident(s)) if s == "str" => Type::Str,
+        Some(Token::Ident(s)) if s == "bool" => Type::Bool,
+        Some(Token::Ident(s)) => Type::Struct(s),
+        _ => die(line_no, "Expected type name"),
+    }
 }
 
 fn keyword_line_style(tokens: &[Token], line_no: usize, keyword: &str) -> Option<BlockStyle> {
@@ -383,6 +589,10 @@ impl LineParser {
             self.pos += 1;
             Some(tok)
         }
+    }
+
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
     }
 
     fn expect(&mut self, token: Token, msg: &str) {
@@ -488,7 +698,7 @@ impl ExprParser {
     }
 
     fn parse_factor(&mut self) -> Expr {
-        match self.next() {
+        let mut expr = match self.next() {
             Some(Token::Number(v)) => Expr::Int(v),
             Some(Token::Str(s)) => Expr::Str(s),
             Some(Token::Ident(s)) if s == "true" => Expr::Bool(true),
@@ -498,6 +708,10 @@ impl ExprParser {
                     self.next();
                     let args = self.parse_call_args();
                     Expr::Call { name: s, args }
+                } else if matches!(self.peek(), Some(Token::LBrace)) {
+                    self.next();
+                    let fields = self.parse_struct_init_fields();
+                    Expr::StructInit { name: s, fields }
                 } else {
                     Expr::Var(s)
                 }
@@ -508,7 +722,21 @@ impl ExprParser {
                 expr
             }
             _ => die(self.line_no, "Expected expression"),
+        };
+
+        while matches!(self.peek(), Some(Token::Dot)) {
+            self.next();
+            let name = match self.next() {
+                Some(Token::Ident(s)) => s,
+                _ => die(self.line_no, "Expected field name after '.'"),
+            };
+            expr = Expr::Field {
+                base: Box::new(expr),
+                name,
+            };
         }
+
+        expr
     }
 
     fn expect(&mut self, token: Token, msg: &str) {
@@ -531,6 +759,34 @@ impl ExprParser {
         }
         self.expect(Token::RParen, "Expected ')'");
         args
+    }
+
+    fn parse_struct_init_fields(&mut self) -> Vec<(String, Expr)> {
+        if matches!(self.peek(), Some(Token::RBrace)) {
+            self.next();
+            return Vec::new();
+        }
+        let mut fields = Vec::new();
+        loop {
+            let name = match self.next() {
+                Some(Token::Ident(s)) => s,
+                _ => die(self.line_no, "Expected field name"),
+            };
+            self.expect(Token::Colon, "Expected ':' in struct initializer");
+            let expr = self.parse_expr();
+            fields.push((name, expr));
+            match self.peek() {
+                Some(Token::Comma) => {
+                    self.next();
+                }
+                Some(Token::RBrace) => {
+                    self.next();
+                    break;
+                }
+                _ => die(self.line_no, "Expected ',' or '}' in struct initializer"),
+            }
+        }
+        fields
     }
 
     fn expect_end(&mut self) {
