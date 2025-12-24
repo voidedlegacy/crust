@@ -1,0 +1,12 @@
+let i = 0
+while i < 3:
+print "i =", i
+let i = i + 1
+end
+
+let x = 2
+if x == 2:
+print "two"
+else:
+print "not two"
+end

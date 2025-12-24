@@ -83,3 +83,38 @@ fn vm_multiple_prints() {
     let output = String::from_utf8(out).expect("utf8");
     assert_eq!(output, "42\ndone\n");
 }
+
+#[test]
+fn vm_if_else() {
+    let program = parse_program(
+        "let x = 3\n\
+         if x > 2:\n\
+         print \"yes\"\n\
+         else:\n\
+         print \"no\"\n\
+         end\n",
+    );
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "yes\n");
+}
+
+#[test]
+fn vm_while_loop() {
+    let program = parse_program(
+        "let i = 0\n\
+         while i < 3:\n\
+         print i\n\
+         let i = i + 1\n\
+         end\n",
+    );
+    let typed = type_check(program);
+    let code = compile_to_bytecode(&typed);
+    let mut out = Vec::new();
+    run_bytecode_with_writer(&code, &mut out);
+    let output = String::from_utf8(out).expect("utf8");
+    assert_eq!(output, "0\n1\n2\n");
+}

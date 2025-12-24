@@ -11,6 +11,13 @@ pub enum Token {
     Slash,
     Comma,
     Eq,
+    EqEq,
+    BangEq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Colon,
     LParen,
     RParen,
 }
@@ -47,7 +54,42 @@ pub fn lex_line(line: &str, line_no: usize) -> Vec<Token> {
                 i += 1;
             }
             '=' => {
-                tokens.push(Token::Eq);
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token::EqEq);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Eq);
+                    i += 1;
+                }
+            }
+            '!' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token::BangEq);
+                    i += 2;
+                } else {
+                    die(line_no, "Unexpected '!'");
+                }
+            }
+            '<' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token::Lte);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Lt);
+                    i += 1;
+                }
+            }
+            '>' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token::Gte);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Gt);
+                    i += 1;
+                }
+            }
+            ':' => {
+                tokens.push(Token::Colon);
                 i += 1;
             }
             '(' => {

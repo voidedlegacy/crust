@@ -8,6 +8,7 @@ use crate::util::die_simple;
 enum Value {
     Int(i64),
     Str(String),
+    Bool(bool),
 }
 
 pub fn run_bytecode(code: &[Instr]) {
@@ -18,11 +19,12 @@ pub fn run_bytecode(code: &[Instr]) {
 pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
     let mut stack: Vec<Value> = Vec::new();
     let mut vars: HashMap<String, Value> = HashMap::new();
-
-    for instr in code {
-        match instr {
+    let mut ip: usize = 0;
+    while ip < code.len() {
+        match &code[ip] {
             Instr::PushInt(v) => stack.push(Value::Int(*v)),
             Instr::PushStr(s) => stack.push(Value::Str(s.clone())),
+            Instr::PushBool(v) => stack.push(Value::Bool(*v)),
             Instr::LoadVar(name) => {
                 let value = vars
                     .get(name)
@@ -52,6 +54,29 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
                     _ => die_simple("Type error in string concatenation"),
                 }
             }
+            Instr::CmpEq => cmp_eq(&mut stack),
+            Instr::CmpNe => cmp_ne(&mut stack),
+            Instr::CmpLt => cmp_int(&mut stack, |a, b| a < b),
+            Instr::CmpLte => cmp_int(&mut stack, |a, b| a <= b),
+            Instr::CmpGt => cmp_int(&mut stack, |a, b| a > b),
+            Instr::CmpGte => cmp_int(&mut stack, |a, b| a >= b),
+            Instr::Jump(target) => {
+                ip = *target;
+                continue;
+            }
+            Instr::JumpIfFalse(target) => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on JumpIfFalse");
+                });
+                match value {
+                    Value::Bool(false) => {
+                        ip = *target;
+                        continue;
+                    }
+                    Value::Bool(true) => {}
+                    _ => die_simple("Type error on JumpIfFalse"),
+                }
+            }
             Instr::PrintInt => {
                 let value = stack.pop().unwrap_or_else(|| {
                     die_simple("Stack underflow on PrintInt");
@@ -70,12 +95,22 @@ pub fn run_bytecode_with_writer<W: Write>(code: &[Instr], out: &mut W) {
                     _ => die_simple("Type error on PrintStr"),
                 }
             }
+            Instr::PrintBool => {
+                let value = stack.pop().unwrap_or_else(|| {
+                    die_simple("Stack underflow on PrintBool");
+                });
+                match value {
+                    Value::Bool(v) => write_out(out, if v { "true" } else { "false" }),
+                    _ => die_simple("Type error on PrintBool"),
+                }
+            }
             Instr::PrintSpace => write_out(out, " "),
             Instr::PrintNewline => {
                 write_out(out, "\n");
                 out.flush().ok();
             }
         }
+        ip += 1;
     }
 }
 
@@ -90,6 +125,51 @@ fn bin_int_op(stack: &mut Vec<Value>, op: fn(i64, i64) -> i64) {
         (Value::Int(a), Value::Int(b)) => stack.push(Value::Int(op(a, b))),
         _ => die_simple("Type error in arithmetic"),
     }
+}
+
+fn cmp_int(stack: &mut Vec<Value>, op: fn(i64, i64) -> bool) {
+    let right = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    let left = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    match (left, right) {
+        (Value::Int(a), Value::Int(b)) => stack.push(Value::Bool(op(a, b))),
+        _ => die_simple("Type error in comparison"),
+    }
+}
+
+fn cmp_eq(stack: &mut Vec<Value>) {
+    let right = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    let left = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    let result = match (left, right) {
+        (Value::Int(a), Value::Int(b)) => a == b,
+        (Value::Str(a), Value::Str(b)) => a == b,
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        _ => die_simple("Type error in comparison"),
+    };
+    stack.push(Value::Bool(result));
+}
+
+fn cmp_ne(stack: &mut Vec<Value>) {
+    let right = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    let left = stack.pop().unwrap_or_else(|| {
+        die_simple("Stack underflow on comparison");
+    });
+    let result = match (left, right) {
+        (Value::Int(a), Value::Int(b)) => a != b,
+        (Value::Str(a), Value::Str(b)) => a != b,
+        (Value::Bool(a), Value::Bool(b)) => a != b,
+        _ => die_simple("Type error in comparison"),
+    };
+    stack.push(Value::Bool(result));
 }
 
 fn write_out<W: Write>(out: &mut W, text: &str) {
